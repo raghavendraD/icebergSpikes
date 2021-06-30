@@ -62,3 +62,13 @@ spark.sql("insert overwrite local.db.test partition(city='bangalore') values (20
 
 // alter table
 spark.sql("ALTER TABLE local.db.users1 DROP COLUMN department")
+
+// delete from table
+spark.sql("delete from local.db.person where name like '%Mo%'")
+
+//table create and data load
+case class Person (id: Int, name: String, City : String )
+val r = 1 to 10000 toList
+val df = spark.createDataset(r.map(i => Person(i, "raghu"+i, "Bangalore"+(i%9+1 ))))
+df.writeTo("local.db.person").create()
+spark.read.format("iceberg").load("local.db.person").show
