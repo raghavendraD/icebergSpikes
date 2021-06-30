@@ -1,0 +1,46 @@
+// start a spark shell
+spark-shell --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog --conf spark.sql.catalog.my_catalog.warehouse=s3://xxx_path_poc-bucket/ --conf spark.sql.catalog.my_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog --conf spark.sql.catalog.my_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
+
+import org.apache.iceberg.aws.glue.GlueCatalog;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.types.Types;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.spark.sql.{Row, SparkSession, Dataset}
+import org.apache.iceberg.{PartitionSpec, Schema, Table}
+import org.apache.iceberg.catalog.{Namespace, TableIdentifier}
+import org.apache.iceberg.hadoop.{ConfigProperties, HadoopCatalog}
+import org.apache.iceberg.hive.{HiveCatalog}
+import org.apache.iceberg.types.{Type, Types}
+import java.util.List;
+import java.util.Map;
+import spark.implicits._
+import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StringType;
+import org.apache.iceberg.types.Types.NestedField.optional;
+import org.apache.iceberg.types.Types.NestedField.required;
+import scala.collection.JavaConversions.mapAsScalaMap
+import scala.collection.JavaConversions._
+import org.apache.iceberg.actions.{Actions}
+import org.apache.iceberg.expressions.Expressions
+
+var gluecatalog = new GlueCatalog();
+var namespace = "raghu";
+var map = new java.util.HashMap[String, String]()
+map.put("warehouse", "s3://xxx+path-poc-bucket/")
+gluecatalog.initialize(namespace,map);
+
+gluecatalog.createNamespace(Namespace.of(namespace));
+var tableName = TableIdentifier.of(namespace, "cars200")
+spark.sql("create table my_catalog.raghu.cars200 (carNumber Int, carName String, carOwner String, wheelSize Int,  price Int, gears Int, vehicleType String, engine String, dateOfPurchase String, carCompany String) USING iceberg PARTITIONED BY (carName)")
+
+case class Cars (carNumber: Int, carName: String, carOwner: String, wheelSize: Int,  price: Int, gears: Int, vehicleType: String, engine: String, dateOfPurchase: String, carCompany: String)
+val r = 1 to 100 toList
+val df = spark.createDataset(r.map(i => Cars(i, "Creata"+(i%10), "Raghu"+i, i%10, 10000+i, 4+(i%2) , "Petrol", "HP-VDI" + (i%100),"2021-06-0"+(i%9+1 ),"Hyundai"+(i%10))))
+df.sortWithinPartitions("carName").write.format("iceberg").mode("append").partitionBy("carName").save("my_catalog.raghu.cars200")
+val table = gluecatalog.loadTable(tableName);
+
+// compacting table data and manifest/metadata
+Actions.forTable(table).rewriteDataFiles().targetSizeInBytes(500 * 1024 * 1024).execute()
+table.rewriteManifests().clusterBy(x => "x").commit();

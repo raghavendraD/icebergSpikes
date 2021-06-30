@@ -1,0 +1,64 @@
+//initiate spark shell
+spark-shell --packages org.apache.iceberg:iceberg-spark3-runtime:0.11.0 --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog --conf spark.sql.catalog.spark_catalog.type=hive --conf spark.sql.catalog.local=org.apache.iceberg.spark.SparkCatalog --conf spark.sql.catalog.local.type=hadoop --conf spark.sql.catalog.local.warehouse=$PWD/warehouse
+
+//Below all use local catalog which is spark session catalog where metastore is local and not hive/hadoop/glume
+//creating non partitioned table
+spark.sql("CREATE TABLE IF NOT EXISTS local.db.users (id int, name String, City String) USING iceberg")
+
+//creating non partitioned table from another table
+spark.sql("CREATE TABLE IF NOT EXISTS local.db.users1 USING iceberg AS select * from local.db.users")
+
+//create table and load csv data
+CREATE TABLE IF NOT EXISTS local.db.cars (company string,mpg double,cyl double,disp double,hp double,drat double,wt double,qsec double,vs double,am double,gear double,carb double) USING iceberg OPTIONS (path "/Users/rdesai/Desktop/cars.csv", header "true")
+
+// creating partitioned table
+spark.sql("CREATE TABLE local.db.test (id bigint,name string,city string) USING iceberg PARTITIONED BY (city)")
+
+// loading csv data to partitioned table
+val df = spark.read.option("header",true).csv("/Users/rdesai/Desktop/cars.csv");
+df.createOrReplaceTempView("mytempTable")
+spark.sql("select * from mytempTable").show();
+spark.sql("CREATE TABLE IF NOT EXISTS local.db.cars (mpg string, cycl string, disp string, hp string, drat string, wt string, qsec string, vs string, am string, gear string, carb string,company string) USING iceberg PARTITIONED BY (company)");
+spark.sql("insert overwrite local.db.cars select mpg,cyl,disp,hp,drat,wt,qsec,vs,am,gear,carb,company from mytempTable");
+
+// viewing iceberg table data
+spark.sql("select * from local.db.cars").show();
+
+// drop tables
+spark.sql("drop table local.db.cars500")
+
+//insert data into iceberg tables
+spark.sql("insert into local.db.cars500 values(1111,'swift dzire','mohit',11,450000,5,'Diesel','TXI','2021-06-30','maruti suzuki')")
+
+//delta load
+//MERGE INTO example
+spark.sql("CREATE TABLE IF NOT EXISTS local.db.testA (id int,name string) USING iceberg”);
+spark.sql("insert into local.db.testA values(1,'raghu'),(2,'arun'),(3,'mohit'),(4,'kiran')");
+spark.sql("CREATE TABLE IF NOT EXISTS local.db.testB (id int,name string) USING iceberg”);
+spark.sql("insert into local.db.testB values(2,'aditya'),(5,'priya'),(6,'arun'),(7,'vishnu'),(8,'mahesh'),(4,'ajay')");
+spark.sql("select * from local.db.testA order by id”).show();
+spark.sql("select * from local.db.testB order by id”).show();
+spark.sql("MERGE INTO local.db.testA t USING (select * from local.db.testB) s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.name = s.name WHEN NOT MATCHED THEN INSERT(t.id,t.name) values(s.id,s.name)")
+spark.sql("select * from local.db.testA order by id”).show();
+
+//adding values to partition table
+scala> spark.sql("CREATE TABLE local.db.test (id bigint,name string,city string) USING iceberg PARTITIONED BY (city)")
+res63: org.apache.spark.sql.DataFrame = []
+scala> spark.sql("insert into local.db.test partition(city='bangalore') values (2017, 'chandru Raghavan')");
+res65: org.apache.spark.sql.DataFrame = []
+scala> spark.sql("insert into local.db.test partition(city='bangalore') values (2024, 'mohit Raghavan')");
+res66: org.apache.spark.sql.DataFrame = []
+scala> spark.sql("insert into local.db.test partition(city='hyderabad') values (3017, 'girish')");
+res67: org.apache.spark.sql.DataFrame = []
+scala> spark.sql("insert into local.db.test partition(city='hyderabad') values (5017, 'mallesh')");
+res68: org.apache.spark.sql.DataFrame = []
+scala> spark.sql("insert into local.db.test partition(city='hyderabad') values (50174, 'guru aditya')");
+
+// replace table
+spark.sql("REPLACE TABLE local.db.users1 USING iceberg AS select * from local.db.users")
+
+// insert overwrite
+spark.sql("insert overwrite local.db.test partition(city='bangalore') values (2017, 'chandru Raghavan')");
+
+// alter table
+spark.sql("ALTER TABLE local.db.users1 DROP COLUMN department")

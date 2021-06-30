@@ -1,0 +1,49 @@
+// start a shell
+spark-shell --packages org.apache.iceberg:iceberg-spark3-runtime:0.11.0 --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog --conf spark.sql.catalog.spark_catalog.type=hive --conf spark.sql.catalog.local=org.apache.iceberg.spark.SparkCatalog --conf spark.sql.catalog.local.type=hadoop --conf spark.sql.catalog.local.warehouse=$PWD/warehouse
+
+case class Person (id: Int, name: String, date : String )
+val r = 1 to 100000 toList
+val df = spark.createDataset(r.map(i => Person(i, "Mohit"+i, "2021-06-0"+(i%9+1 ))))
+spark.sql("create table local.db.person (id int, name string, date string) USING iceberg")
+df.writeTo("local.db.person").create()
+
+// start another shell
+spark-shell --packages org.apache.iceberg:iceberg-spark3-runtime:0.11.0 
+--conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions 
+
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.iceberg.{PartitionSpec, Schema, Table}
+import org.apache.iceberg.catalog.{Namespace, TableIdentifier}
+import org.apache.iceberg.hadoop.{ConfigProperties}
+import org.apache.iceberg.hadoop.{HadoopCatalog}
+import org.apache.iceberg.types.{Type, Types}
+import org.apache.hadoop.conf.{Configuration}
+import org.apache.spark.sql.types.{StructType, StructField, StringType, IntegerType};
+import org.apache.iceberg.expressions.Expressions.{and, alwaysTrue, equal};
+import org.apache.iceberg.types.{Type, Types}    
+import org.apache.spark.sql.types.{StructType, StructField, StringType, IntegerType}
+import java.util.{Calendar, Date}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql
+import org.apache.spark.sql.SparkSession
+import spark.implicits._
+import org.apache.iceberg.actions.{Actions}
+import org.apache.iceberg.expressions.Expressions
+
+val warehouse = "/Users/rdesai/warehouse";
+val hadoopConfig = new Configuration();
+hadoopConfig.set("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
+hadoopConfig.set("spark.sql.catalog.local.type", "hadoop")
+hadoopConfig.set("spark.sql.catalog.local.warehouse", warehouse)
+val catalog = new HadoopCatalog(spark.sessionState.newHadoopConf(), "file://" + warehouse)
+
+val name = TableIdentifier.of("db","person");
+val table = catalog.loadTable(name);
+
+// compaction of data and manifest files
+Actions.forTable(table).rewriteDataFiles().targetSizeInBytes(500 * 1024 * 1024).execute()
+table.rewriteManifests().clusterBy(x => "x").commit();
+
+// compaction of a specific column/partition/data
+import org.apache.iceberg.expressions.Expressions
+Actions.forTable(table).rewriteDataFiles().filter(Expressions.equal("person", "mohit1")).targetSizeInBytes(500 * 1024 * 1024).execute()

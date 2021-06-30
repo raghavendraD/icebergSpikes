@@ -1,0 +1,50 @@
+//creating table with buckets and ingesting data to buckets
+
+// start a spark shell
+spark-shell --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog --conf spark.sql.catalog.my_catalog.warehouse=s3://xxx_path_poc-bucket/ --conf spark.sql.catalog.my_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog --conf spark.sql.catalog.my_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
+
+import org.apache.iceberg.aws.glue.GlueCatalog;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.types.Types;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.spark.sql.{Row, SparkSession, Dataset}
+import org.apache.iceberg.{PartitionSpec, Schema, Table}
+import org.apache.iceberg.catalog.{Namespace, TableIdentifier}
+import org.apache.iceberg.hadoop.{ConfigProperties, HadoopCatalog}
+import org.apache.iceberg.hive.{HiveCatalog}
+import org.apache.iceberg.types.{Type, Types}
+import java.util.List;
+import java.util.Map;
+import spark.implicits._
+import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StringType;
+import org.apache.iceberg.types.Types.NestedField.optional;
+import org.apache.iceberg.types.Types.NestedField.required;
+import scala.collection.JavaConversions.mapAsScalaMap
+import scala.collection.JavaConversions._
+import org.apache.iceberg.actions.{Actions}
+import org.apache.iceberg.expressions.Expressions
+import org.apache.iceberg.spark.IcebergSpark
+import org.apache.spark.sql.types.DataTypes
+IcebergSpark.registerBucketUDF(spark, "iceberg_bucket16", DataTypes.LongType, 16)
+
+var gluecatalog = new GlueCatalog();
+var namespace = "raghu";
+var map = new java.util.HashMap[String, String]()
+map.put("warehouse", "s3://xxx+path-poc-bucket/")
+gluecatalog.initialize(namespace,map);
+
+gluecatalog.createNamespace(Namespace.of(namespace));
+var tableName = TableIdentifier.of(namespace, "cdp_test")
+var schema = new Schema(Types.NestedField.optional(1, "id", Types.LongType.get()), Types.NestedField.optional(2, "name", Types.StringType.get()), Types.NestedField.optional(3, "date", Types.StringType.get()));
+var partitionSpec = PartitionSpec.builderFor(schema).bucket("id", 16).build(); // for bucketted/partitioned tables
+gluecatalog.createTable(tableName, schema, partitionSpec);
+
+case class Person (id: Int, name: String, date : String )
+val r = 1 to 10000 toList
+val df = spark.createDataset(r.map(i => Person(i, "Mohit"+i, "2021-06-0"+(i%9+1 ))))
+df.sortWithinPartitions(expr("iceberg_bucket16(id)")).writeTo("my_catalog.raghu.cdp_test").append()
+//or
+df.sortWithinPartitions(expr("iceberg_bucket16(id)")).write.format("iceberg").mode("append").save("my_catalog.raghu.cdp_test")
