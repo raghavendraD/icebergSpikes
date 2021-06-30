@@ -47,3 +47,19 @@ table.rewriteManifests().clusterBy(x => "x").commit();
 // compaction of a specific column/partition/data
 import org.apache.iceberg.expressions.Expressions
 Actions.forTable(table).rewriteDataFiles().filter(Expressions.equal("person", "mohit1")).targetSizeInBytes(500 * 1024 * 1024).execute()
+
+// expire snapshots
+spark.sql("CREATE TABLE local.db.person (id bigint, name string, state string) USING iceberg")
+
+val r = 1 to 100 toList
+r.foreach( i => { spark.sql(s"insert into local.db.person values ($i, 'Mohit', '2021-06-$i') ") })
+
+spark.sql(s" CALL local.system.expire_snapshots(table => 'db.person', older_than => TIMESTAMP '2021-06-24 01:08:00.00', retain_last => 2 ) ").show
++------------------------+----------------------------+----------------------------+
+|deleted_data_files_count|deleted_manifest_files_count|deleted_manifest_lists_count|
++------------------------+----------------------------+----------------------------+
+|                       0|                           0|                          98|
++------------------------+----------------------------+----------------------------+
+
+// clean up orphan files
+spark.sql(s" CALL local.system.remove_orphan_files(table => 'db.person2', dry_run => true) ").show
